@@ -1,7 +1,7 @@
 // Reto 5 USD en el teléfono. Lee el último resumen cifrado que publicó la app de la PC
 // y le manda pedidos cifrados (confirmar, descartar o cargar compras). Sin servidor propio:
 // los mensajes pasan por ntfy.sh, que solo ve texto ilegible.
-import { decrypt, encrypt } from './crypto.js?v=4';
+import { decrypt, encrypt, fromB64 } from './crypto.js?v=5';
 
 const NTFY = 'https://ntfy.sh';
 const POLL_MS = 30000;
@@ -605,12 +605,122 @@ function homeTip() {
   );
 }
 
+// ---------- Notificaciones ----------
+// Solo desde el ícono de inicio (así lo exige el iPhone) y con un toque para pedir permiso.
+const PUSH_LS = 'reto5-push';
+const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+const pushState = () => store.get(PUSH_LS);
+
+async function enablePush(btn) {
+  if (!snap?.push?.key) return toast('Primero tienen que llegar los datos de tu PC.');
+  btn.disabled = true;
+  try {
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') {
+      toast('Sin permiso no te puedo avisar. Podés darlo en Ajustes del iPhone → Notificaciones.');
+      btn.disabled = false;
+      return;
+    }
+    const reg = await navigator.serviceWorker.ready;
+    const old = await reg.pushManager.getSubscription();
+    if (old && pushState()?.key !== snap.push.key) await old.unsubscribe();
+    const sub =
+      (pushState()?.key === snap.push.key && old) ||
+      (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: fromB64(snap.push.key) }));
+    const json = sub.toJSON();
+    await sendCommand('push-sub', { data: { endpoint: json.endpoint, keys: json.keys } }, 'Activar notificaciones');
+    store.set(PUSH_LS, { endpoint: json.endpoint, key: snap.push.key, at: Date.now() });
+    toast('Listo: te aviso cuando haya compras para confirmar');
+    render();
+    setTimeout(fetchSnap, 8000);
+  } catch {
+    toast('No se pudieron activar. Probá de nuevo.');
+    btn.disabled = false;
+  }
+}
+
+async function disablePush() {
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    if (sub) {
+      const json = sub.toJSON();
+      await sendCommand('push-off', { data: { endpoint: json.endpoint, keys: json.keys } }, 'Desactivar notificaciones');
+      await sub.unsubscribe();
+    }
+  } catch {
+    /* se olvida igual */
+  }
+  store.set(PUSH_LS, null);
+  toast('Notificaciones desactivadas');
+  render();
+}
+
+/** Tarjeta para activar las notificaciones (dentro del ícono, si todavía no están). */
+function pushCard(s) {
+  if (!isStandalone() || !pushSupported() || !s.push?.key) return null;
+  const mine = pushState();
+  if (mine?.key === s.push.key && Notification.permission === 'granted') return null;
+  if (Notification.permission === 'denied')
+    return h(
+      'section',
+      { class: 'card tip' },
+      h(
+        'div',
+        { class: 'grow' },
+        h('b', null, 'Notificaciones bloqueadas'),
+        h('small', null, 'Activalas en Ajustes del iPhone → Notificaciones → Reto 5 USD.'),
+      ),
+    );
+  return h(
+    'section',
+    { class: 'card tip' },
+    h(
+      'div',
+      { class: 'grow' },
+      h('b', null, 'Activá las notificaciones'),
+      h('small', null, 'Te aviso cuando llega una compra de Balanz para confirmar.'),
+    ),
+    h('button', { class: 'btn primary tip-go', type: 'button', onclick: (e) => enablePush(e.currentTarget) }, 'Activar'),
+  );
+}
+
+function pushFooter(s) {
+  if (!pushSupported()) return null;
+  if (!isStandalone()) return h('p', null, 'Las notificaciones se activan desde el ícono de la pantalla de inicio.');
+  const mine = pushState();
+  if (!mine || mine.key !== s?.push?.key) return null;
+  const pending = !s.push.devices;
+  return h(
+    'div',
+    { class: 'push-foot' },
+    h('p', null, pending ? 'Notificaciones: se activan cuando la app de la PC esté abierta.' : 'Notificaciones activadas ✓'),
+    h(
+      'button',
+      {
+        onclick: async () => {
+          try {
+            await sendCommand('push-test', {}, 'Probar notificación');
+            toast('Pedido enviado: llega en un ratito si la PC está prendida');
+          } catch {
+            toast('No se pudo enviar. Revisá la conexión.');
+          }
+        },
+      },
+      'Probar notificación',
+    ),
+    ' · ',
+    h('button', { onclick: disablePush }, 'Desactivar'),
+  );
+}
+
 function footer() {
   const url = location.origin + location.pathname;
   const standalone = isStandalone();
   return h(
     'div',
     { class: 'foot' },
+    pushFooter(snap),
     standalone ? null : h('button', { class: 'btn home-btn', type: 'button', onclick: openHomeSheet }, 'Agregar a la pantalla de inicio'),
     h(
       'details',
@@ -840,6 +950,7 @@ function render() {
       );
     blocks.push(
       homeTip(),
+      pushCard(snap),
       heroCard(snap),
       pendingCard(snap),
       sentCard(),
@@ -853,6 +964,14 @@ function render() {
   app.replaceChildren(...blocks.filter(Boolean));
   if (!document.querySelector('.fab'))
     document.body.append(h('button', { class: 'fab', type: 'button', onclick: openAddSheet }, icon(ICON.plus), 'Cargar compra'));
+}
+
+// La pieza que recibe las notificaciones con la web cerrada.
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+  navigator.serviceWorker.addEventListener('message', (e) => {
+    if (e.data?.type === 'refresh') fetchSnap();
+  });
 }
 
 readHash();

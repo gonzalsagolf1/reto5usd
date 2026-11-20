@@ -784,3 +784,7 @@ details.help ol {
   width: 100%;
   max-width: 340px;
 }
+
+.push-foot p {
+  margin: 0 0 4px;
+}
