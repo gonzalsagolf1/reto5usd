@@ -1,7 +1,7 @@
 // Reto 5 USD en el teléfono. Lee el último resumen cifrado que publicó la app de la PC
 // y le manda pedidos cifrados (confirmar, descartar o cargar compras). Sin servidor propio:
 // los mensajes pasan por ntfy.sh, que solo ve texto ilegible.
-import { decrypt, encrypt, fromB64 } from './crypto.js?v=5';
+import { decrypt, encrypt, fromB64 } from './crypto.js?v=6';
 
 const NTFY = 'https://ntfy.sh';
 const POLL_MS = 30000;
@@ -332,7 +332,7 @@ function pendingCard(s) {
     h(
       'div',
       { class: 'card-head' },
-      h('div', null, h('div', { class: 'eyebrow' }, 'Para confirmar'), h('h2', null, 'Compras detectadas')),
+      h('div', null, h('div', { class: 'eyebrow' }, 'Para confirmar'), h('h2', null, 'Detectado en Balanz')),
       h('span', { class: 'chip accent' }, `${list.length}`),
     ),
     list.map((p) => {
@@ -349,7 +349,11 @@ function pendingCard(s) {
           h(
             'div',
             { class: 'grow' },
-            h('b', null, `${p.qty != null ? fmtQty(p.qty) + ' ' : ''}${p.asset || 'Compra'}`),
+            h(
+              'b',
+              null,
+              p.kind === 'dividend' ? `Dividendo de ${p.asset}` : `${p.qty != null ? fmtQty(p.qty) + ' ' : ''}${p.asset || 'Compra'}`,
+            ),
             h('small', null, [fmtDate(p.date), money, p.source === 'phone' ? 'desde el teléfono' : 'Balanz'].filter(Boolean).join(' · ')),
           ),
         ),
@@ -363,7 +367,11 @@ function pendingCard(s) {
               'div',
               { class: 'actions' },
               h('button', { class: 'btn', onclick: (e) => act(e, 'dismiss', p, 'Descartar') }, 'Descartar'),
-              h('button', { class: 'btn primary', onclick: (e) => act(e, 'confirm', p, 'Agregar') }, 'Agregar al reto'),
+              h(
+                'button',
+                { class: 'btn primary', onclick: (e) => act(e, 'confirm', p, 'Agregar') },
+                p.kind === 'dividend' ? 'Registrar' : 'Agregar al reto',
+              ),
             ),
       );
     }),
