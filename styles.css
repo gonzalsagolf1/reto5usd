@@ -733,3 +733,37 @@ details.help ol {
 .steps b {
   color: var(--text);
 }
+
+.tip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 14px 14px 16px;
+  border-color: var(--accent-line);
+}
+
+.tip .grow {
+  flex: 1;
+  min-width: 0;
+}
+
+.tip small {
+  display: block;
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+.tip-go {
+  flex: none;
+  height: 38px;
+  padding: 0 16px;
+}
+
+.tip-x {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  font-size: 22px;
+  line-height: 1;
+  color: var(--text-3);
+}

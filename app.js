@@ -1,7 +1,7 @@
 // Reto 5 USD en el teléfono. Lee el último resumen cifrado que publicó la app de la PC
 // y le manda pedidos cifrados (confirmar, descartar o cargar compras). Sin servidor propio:
 // los mensajes pasan por ntfy.sh, que solo ve texto ilegible.
-import { decrypt, encrypt } from './crypto.js';
+import { decrypt, encrypt } from './crypto.js?v=3';
 
 const NTFY = 'https://ntfy.sh';
 const POLL_MS = 30000;
@@ -481,6 +481,23 @@ function openHomeSheet() {
   );
 }
 
+/** Sugerencia para agregar a inicio, arriba de todo, hasta que la uses o la cierres. */
+function homeTip() {
+  const standalone = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
+  if (standalone || store.get('reto5-tip-home')) return null;
+  const hide = () => {
+    store.set('reto5-tip-home', true);
+    render();
+  };
+  return h(
+    'section',
+    { class: 'card tip' },
+    h('div', { class: 'grow' }, h('b', null, 'Tenela en la pantalla de inicio'), h('small', null, 'Un ícono que la abre ya vinculada.')),
+    h('button', { class: 'btn primary tip-go', type: 'button', onclick: openHomeSheet }, 'Agregar'),
+    h('button', { class: 'tip-x', type: 'button', 'aria-label': 'Cerrar sugerencia', onclick: hide }, '×'),
+  );
+}
+
 function footer() {
   const url = location.origin + location.pathname;
   const standalone = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
@@ -715,6 +732,7 @@ function render() {
         ),
       );
     blocks.push(
+      homeTip(),
       heroCard(snap),
       pendingCard(snap),
       sentCard(),
