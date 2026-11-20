@@ -1,7 +1,7 @@
 // Reto 5 USD en el teléfono. Lee el último resumen cifrado que publicó la app de la PC
 // y le manda pedidos cifrados (confirmar, descartar o cargar compras). Sin servidor propio:
 // los mensajes pasan por ntfy.sh, que solo ve texto ilegible.
-import { decrypt, encrypt } from './crypto.js?v=3';
+import { decrypt, encrypt } from './crypto.js?v=4';
 
 const NTFY = 'https://ntfy.sh';
 const POLL_MS = 30000;
@@ -121,11 +121,25 @@ let lastError = null;
 /** El QR trae canales y clave en el # (nunca llega al servidor de la página). */
 function readHash() {
   if (!location.hash.includes('k=')) return;
-  const p = new URLSearchParams(location.hash.slice(1));
-  const next = { o: p.get('o'), i: p.get('i'), k: p.get('k') };
+  const frag = location.hash.slice(1);
   history.replaceState(null, '', location.pathname + location.search);
+  if (!applyLink(frag)) toast('El link no es válido. Escaneá el código de nuevo.');
+}
+
+/** Saca canales y clave de un link completo o de lo que va después del #. */
+function parseLink(text) {
+  const s = String(text || '').trim();
+  const frag = s.includes('#') ? s.slice(s.indexOf('#') + 1) : s;
+  const p = new URLSearchParams(frag);
+  const next = { o: p.get('o'), i: p.get('i'), k: p.get('k') };
   const ok = /^[\w-]{12,64}$/.test(next.o || '') && /^[\w-]{12,64}$/.test(next.i || '') && /^[\w-]{40,48}$/.test(next.k || '');
-  if (!ok) return toast('El link no es válido. Escaneá el código de nuevo.');
+  return ok ? next : null;
+}
+
+/** Guarda el vínculo. Devuelve false si el texto no es un vínculo válido. */
+function applyLink(text) {
+  const next = parseLink(text);
+  if (!next) return false;
   const changed = link?.k !== next.k;
   if (changed) {
     snap = null;
@@ -135,9 +149,14 @@ function readHash() {
   }
   link = next;
   store.set(LS.link, link);
-  // El ícono de inicio abre siempre con el link: solo se avisa la primera vez.
   if (changed) toast('¡Listo! Teléfono vinculado.');
+  return true;
 }
+
+// ?icono=1 simula estar dentro del ícono de inicio (para probar en la PC).
+const isStandalone = () =>
+  navigator.standalone === true || matchMedia('(display-mode: standalone)').matches || new URLSearchParams(location.search).has('icono');
+const linkText = () => `${location.origin}${location.pathname}#${new URLSearchParams({ v: '1', o: link.o, i: link.i, k: link.k })}`;
 
 async function fetchSnap() {
   if (!link || loading) return;
@@ -191,7 +210,67 @@ async function sendCommand(op, payload, label) {
 const resultOf = (id) => (snap?.results || []).find((r) => r.id === id);
 
 // ---------- Pantallas ----------
+/** Dentro del ícono de inicio: se vincula pegando el vínculo copiado desde Safari. */
+function unlinkedStandalone() {
+  const input = h('input', {
+    placeholder: 'Pegá el vínculo acá',
+    autocomplete: 'off',
+    autocapitalize: 'off',
+    spellcheck: 'false',
+    id: 'f-link',
+  });
+  const err = h('div', { class: 'err-msg' });
+  const done = async (text) => {
+    if (!applyLink(text)) {
+      err.textContent = 'Eso no es un vínculo válido. Copialo de nuevo desde Safari.';
+      return;
+    }
+    // El vínculo tiene la clave: se saca del portapapeles.
+    try {
+      await navigator.clipboard.writeText('');
+    } catch {
+      /* sin permiso: no pasa nada */
+    }
+    render();
+    fetchSnap();
+  };
+  return h(
+    'section',
+    { class: 'empty' },
+    h('img', { src: 'icon.svg', alt: '' }),
+    h('h1', null, 'Falta un paso'),
+    h('p', { class: 'faint' }, 'El ícono guarda sus datos aparte de Safari. Pasale el vínculo una sola vez:'),
+    h(
+      'ol',
+      null,
+      h('li', null, 'Abrí la web en Safari (donde ya la tenés vinculada).'),
+      h('li', null, 'Tocá «Agregar» arriba y después «Copiar vínculo».'),
+      h('li', null, 'Volvé a este ícono y tocá «Pegar vínculo».'),
+    ),
+    h(
+      'button',
+      {
+        class: 'btn primary paste-btn',
+        type: 'button',
+        onclick: async () => {
+          try {
+            await done(await navigator.clipboard.readText());
+          } catch {
+            err.textContent = 'No pude leer el portapapeles. Mantené apretado el campo de abajo y elegí «Pegar».';
+            input.focus();
+          }
+        },
+      },
+      'Pegar vínculo',
+    ),
+    h('div', { class: 'input paste-input' }, input),
+    h('button', { class: 'btn', type: 'button', onclick: () => done(input.value) }, 'Vincular'),
+    err,
+  );
+}
+
 function unlinked() {
+  if (isStandalone()) return unlinkedStandalone();
   return h(
     'section',
     { class: 'empty' },
@@ -471,19 +550,47 @@ function openHomeSheet() {
       h(
         'ol',
         { class: 'steps' },
-        h('li', null, 'Tocá el botón ', h('b', null, 'Compartir'), ' de Safari (el cuadrado con la flecha hacia arriba).'),
-        h('li', null, 'Bajá y elegí ', h('b', null, '«Agregar a inicio»'), '.'),
-        h('li', null, 'Tocá ', h('b', null, '«Agregar»'), '. El ícono ya queda vinculado.'),
+        h('li', null, 'Tocá ', h('b', null, '«Copiar vínculo»'), ' (acá abajo).'),
+        h(
+          'li',
+          null,
+          'Tocá ',
+          h('b', null, 'Compartir'),
+          ' en Safari (el cuadrado con la flecha) → ',
+          h('b', null, '«Agregar a pantalla de inicio»'),
+          ' → «Agregar».',
+        ),
+        h('li', null, 'Abrí el ícono nuevo y tocá ', h('b', null, '«Pegar vínculo»'), '. Listo para siempre.'),
       ),
-      h('p', { class: 'hint' }, 'Mientras esta ventana está abierta, la dirección tiene tu clave: no la copies ni la compartas.'),
-      h('div', { class: 'actions' }, h('button', { class: 'btn primary', type: 'button', onclick: close }, 'Listo')),
+      h('p', { class: 'hint' }, 'El vínculo tiene la clave de tus datos: pegalo solo en el ícono. Al pegarlo se borra del portapapeles.'),
+      h(
+        'div',
+        { class: 'actions' },
+        h(
+          'button',
+          {
+            class: 'btn primary',
+            type: 'button',
+            onclick: async (e) => {
+              try {
+                await navigator.clipboard.writeText(linkText());
+                e.currentTarget.textContent = 'Copiado ✓';
+              } catch {
+                toast('No pude copiar. Probá de nuevo.');
+              }
+            },
+          },
+          'Copiar vínculo',
+        ),
+        h('button', { class: 'btn', type: 'button', onclick: close }, 'Listo'),
+      ),
     ),
   );
 }
 
 /** Sugerencia para agregar a inicio, arriba de todo, hasta que la uses o la cierres. */
 function homeTip() {
-  const standalone = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
+  const standalone = isStandalone();
   if (standalone || store.get('reto5-tip-home')) return null;
   const hide = () => {
     store.set('reto5-tip-home', true);
@@ -500,7 +607,7 @@ function homeTip() {
 
 function footer() {
   const url = location.origin + location.pathname;
-  const standalone = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
+  const standalone = isStandalone();
   return h(
     'div',
     { class: 'foot' },

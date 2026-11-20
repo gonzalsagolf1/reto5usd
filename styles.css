@@ -767,3 +767,20 @@ details.help ol {
   line-height: 1;
   color: var(--text-3);
 }
+
+.paste-btn {
+  width: 100%;
+  max-width: 340px;
+  margin: 6px auto 12px;
+  display: block;
+}
+
+.paste-input {
+  max-width: 340px;
+  margin: 0 auto 10px;
+}
+
+.empty .btn:not(.paste-btn) {
+  width: 100%;
+  max-width: 340px;
+}
