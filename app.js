@@ -126,7 +126,8 @@ function readHash() {
   history.replaceState(null, '', location.pathname + location.search);
   const ok = /^[\w-]{12,64}$/.test(next.o || '') && /^[\w-]{12,64}$/.test(next.i || '') && /^[\w-]{40,48}$/.test(next.k || '');
   if (!ok) return toast('El link no es válido. Escaneá el código de nuevo.');
-  if (link?.k !== next.k) {
+  const changed = link?.k !== next.k;
+  if (changed) {
     snap = null;
     sent = [];
     store.set(LS.snap, null);
@@ -134,7 +135,8 @@ function readHash() {
   }
   link = next;
   store.set(LS.link, link);
-  toast('¡Listo! Teléfono vinculado.');
+  // El ícono de inicio abre siempre con el link: solo se avisa la primera vez.
+  if (changed) toast('¡Listo! Teléfono vinculado.');
 }
 
 async function fetchSnap() {
@@ -450,11 +452,42 @@ function recentCard(s) {
   );
 }
 
+/** El ícono de inicio guarda sus datos aparte de Safari: se crea con el link incluido. */
+function openHomeSheet() {
+  const root = document.getElementById('sheet-root');
+  const frag = new URLSearchParams({ v: '1', o: link.o, i: link.i, k: link.k });
+  history.replaceState(null, '', `${location.pathname}${location.search}#${frag}`);
+  const close = () => {
+    history.replaceState(null, '', location.pathname + location.search);
+    root.replaceChildren();
+  };
+  root.replaceChildren(
+    h('div', { class: 'scrim', onclick: close }),
+    h(
+      'div',
+      { class: 'sheet', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Agregar a la pantalla de inicio' },
+      h('div', { class: 'grab' }),
+      h('h2', null, 'Agregar a la pantalla de inicio'),
+      h(
+        'ol',
+        { class: 'steps' },
+        h('li', null, 'Tocá el botón ', h('b', null, 'Compartir'), ' de Safari (el cuadrado con la flecha hacia arriba).'),
+        h('li', null, 'Bajá y elegí ', h('b', null, '«Agregar a inicio»'), '.'),
+        h('li', null, 'Tocá ', h('b', null, '«Agregar»'), '. El ícono ya queda vinculado.'),
+      ),
+      h('p', { class: 'hint' }, 'Mientras esta ventana está abierta, la dirección tiene tu clave: no la copies ni la compartas.'),
+      h('div', { class: 'actions' }, h('button', { class: 'btn primary', type: 'button', onclick: close }, 'Listo')),
+    ),
+  );
+}
+
 function footer() {
   const url = location.origin + location.pathname;
+  const standalone = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
   return h(
     'div',
     { class: 'foot' },
+    standalone ? null : h('button', { class: 'btn home-btn', type: 'button', onclick: openHomeSheet }, 'Agregar a la pantalla de inicio'),
     h(
       'details',
       { class: 'help' },
